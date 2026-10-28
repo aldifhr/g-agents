@@ -1,0 +1,26 @@
+{
+  "name": "gagents",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "node scripts/workspace.mjs @agent-chat/shared build && concurrently -k -n api,web -c green,magenta \"node scripts/workspace.mjs @agent-chat/api dev\" \"node scripts/workspace.mjs @agent-chat/web dev\"",
+    "dev:api": "node scripts/workspace.mjs @agent-chat/shared build && node scripts/workspace.mjs @agent-chat/api dev",
+    "dev:web": "node scripts/workspace.mjs @agent-chat/shared build && node scripts/workspace.mjs @agent-chat/web dev",
+    "build": "node scripts/workspace.mjs @agent-chat/shared build && node scripts/workspace.mjs @agent-chat/api build && node scripts/workspace.mjs @agent-chat/web build",
+    "start": "concurrently -k -n api,web -c green,magenta \"node scripts/workspace.mjs @agent-chat/api start\" \"node scripts/workspace.mjs @agent-chat/web start\"",
+    "typecheck": "node scripts/workspace.mjs @agent-chat/shared build && node scripts/workspace.mjs @agent-chat/api typecheck && node scripts/workspace.mjs @agent-chat/web typecheck"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "concurrently": "^9.2.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
+  }
+}

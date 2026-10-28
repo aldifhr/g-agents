@@ -1,0 +1,119 @@
+@import "tailwindcss";
+
+/* The app mirrors the theme onto <html data-theme>, not a .dark class. */
+@custom-variant dark (&:is([data-theme="dark"] *));
+
+:root {
+  --background: #f7f6f4;
+  --surface: #ffffff;
+  --surface-2: #f1efec;
+  --foreground: #1c1a22;
+  --muted: #6b6775;
+  --faint: #9b97a3;
+  --border: #e5e2dd;
+  --border-strong: #d5d1ca;
+  --accent: #6d5bd0;
+  --accent-soft: #ece9fb;
+  --accent-foreground: #ffffff;
+  --user-bubble: #6d5bd0;
+  --user-bubble-foreground: #ffffff;
+  --agent-bubble: #ffffff;
+  --danger: #c0453f;
+  --success: #3f8f5b;
+  --radius: 14px;
+}
+
+[data-theme="dark"] {
+  --background: #16141b;
+  --surface: #1e1b24;
+  --surface-2: #262230;
+  --foreground: #eceaf1;
+  --muted: #a29dad;
+  --faint: #6f6a7a;
+  --border: #2c2836;
+  --border-strong: #3a3546;
+  --accent: #8b7ae8;
+  --accent-soft: #2a2440;
+  --accent-foreground: #16141b;
+  --user-bubble: #7c6be0;
+  --user-bubble-foreground: #ffffff;
+  --agent-bubble: #262230;
+  --danger: #e07a74;
+  --success: #6fbf8b;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-user-bubble: var(--user-bubble);
+  --color-user-bubble-foreground: var(--user-bubble-foreground);
+  --color-agent-bubble: var(--agent-bubble);
+  --color-danger: var(--danger);
+  --color-success: var(--success);
+  --radius-app: var(--radius);
+  --font-sans: var(--font-sans);
+}
+
+* {
+  border-color: var(--border);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Avatar color families, composed from runtime values so the Tailwind scanner
+   cannot see them; declared here as plain classes instead. */
+.avatar-violet { background: #6d5bd0; color: #fff; }
+.avatar-mint { background: #4fae86; color: #fff; }
+.avatar-peach { background: #e08a5f; color: #fff; }
+.avatar-sky { background: #4f93c8; color: #fff; }
+.avatar-rose { background: #d2688f; color: #fff; }
+.avatar-amber { background: #d9a441; color: #1c1a22; }
+
+/* Markdown rendered inside a chat bubble. */
+.bubble-prose p { margin: 0 0 0.6em; }
+.bubble-prose p:last-child { margin-bottom: 0; }
+.bubble-prose pre {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  font-size: 12px;
+  margin: 0.5em 0;
+}
+.bubble-prose code { font-size: 12px; }
+.bubble-prose :not(pre) > code {
+  background: var(--surface-2);
+  border-radius: 5px;
+  padding: 1px 5px;
+}
+.bubble-prose ul,
+.bubble-prose ol { margin: 0.4em 0 0.6em; padding-left: 1.3em; }
+.bubble-prose a { color: var(--accent); text-decoration: underline; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 8px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}

@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.next/
+.data/
+*.log
+.env
+.env.local
+tsconfig.tsbuildinfo
+
+.gagent-preserved/
+.agent-chat-archive/
