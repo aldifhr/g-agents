@@ -16,11 +16,19 @@
   },
   "devDependencies": {
     "@types/node": "^20",
+    "@types/pg": "^8.23.1",
     "concurrently": "^9.2.1",
+    "drizzle-kit": "^0.31.11",
     "tsx": "^4.21.0",
     "typescript": "^5"
   },
   "allowScripts": {
     "esbuild@0.28.2": true
+  },
+  "dependencies": {
+    "ai": "^7.0.155",
+    "drizzle-orm": "^0.45.4",
+    "pg": "^8.23.1",
+    "zod": "^4.6.7"
   }
 }

@@ -14,6 +14,8 @@ export const createAgentSchema = z.object({
   role: z.string().trim().max(60).default(""),
   systemPrompt: z.string().trim().max(8000).default(""),
   color: agentColorSchema.default("violet"),
+  /** Tool names this agent may call; empty means all of them. */
+  tools: z.array(z.string().min(1)).max(32).default([]),
 });
 
 export const updateAgentSchema = z.object({
@@ -22,9 +24,10 @@ export const updateAgentSchema = z.object({
   systemPrompt: z.string().trim().max(8000).optional(),
   color: agentColorSchema.optional(),
   active: z.boolean().optional(),
+  tools: z.array(z.string().min(1)).max(32).optional(),
 });
 
-export const conversationKindSchema = z.enum(["dm", "chat", "group"]);
+export const conversationKindSchema = z.enum(["dm", "group"]);
 
 export const taskStatusSchema = z.enum(["pending", "in_progress", "review", "done"]);
 
@@ -56,6 +59,7 @@ export const createTaskSchema = z.object({
   title: z.string().trim().min(1, "A task needs a title.").max(200),
   detail: z.string().trim().max(4000).default(""),
   assigneeAgentId: z.string().min(1).nullable().default(null),
+  runId: z.string().min(1).nullable().default(null),
 });
 
 export const updateTaskSchema = z.object({
@@ -63,6 +67,48 @@ export const updateTaskSchema = z.object({
   detail: z.string().trim().max(4000).optional(),
   status: taskStatusSchema.optional(),
   assigneeAgentId: z.string().min(1).nullable().optional(),
+});
+
+/** Project memory. */
+export const memoryScopeSchema = z.enum(["project", "conversation"]);
+export const memoryKindSchema = z.enum(["decision", "architecture", "rule", "note"]);
+
+export const createMemorySchema = z
+  .object({
+    scope: memoryScopeSchema.default("project"),
+    conversationId: z.string().min(1).nullable().default(null),
+    kind: memoryKindSchema.default("note"),
+    title: z.string().trim().min(1, "A memory needs a title.").max(200),
+    body: z.string().trim().max(20_000).default(""),
+  })
+  .transform((value, ctx) => {
+    if (value.scope === "conversation" && !value.conversationId) {
+      ctx.addIssue({ code: "custom", message: "A conversation-scoped memory needs a conversationId." });
+      return z.NEVER;
+    }
+    if (value.scope === "project" && value.conversationId) {
+      return { ...value, conversationId: null };
+    }
+    return value;
+  });
+
+export const updateMemorySchema = z.object({
+  kind: memoryKindSchema.optional(),
+  title: z.string().trim().min(1).max(200).optional(),
+  body: z.string().trim().max(20_000).optional(),
+  active: z.boolean().optional(),
+});
+
+/** Task artifacts. */
+export const artifactKindSchema = z.enum(["report", "diff", "log", "test_result", "file"]);
+
+export const createArtifactSchema = z.object({
+  taskId: z.string().min(1).nullable().default(null),
+  runId: z.string().min(1).nullable().default(null),
+  toolCallId: z.string().min(1).nullable().default(null),
+  kind: artifactKindSchema,
+  title: z.string().trim().max(200).default(""),
+  content: z.string().max(200_000).default(""),
 });
 
 /**

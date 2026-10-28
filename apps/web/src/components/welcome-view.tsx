@@ -1,6 +1,6 @@
 "use client";
 
-import type { Agent, Conversation } from "@agent-chat/shared";
+import type { Agent, Conversation, ConversationKind } from "@agent-chat/shared";
 import { avatarClass, formatRelative, initialsFrom } from "@/lib/ui";
 import { Button } from "@/components/ui/form";
 
@@ -15,14 +15,14 @@ export function WelcomeView({
   conversations,
   onOpenDm,
   onNewAgent,
-  onNewGroup,
+  onNewRoom,
   onSelectConversation,
 }: {
   agents: Agent[];
   conversations: Conversation[];
   onOpenDm: (agentId: string) => void;
   onNewAgent: () => void;
-  onNewGroup: () => void;
+  onNewRoom: () => void;
   onSelectConversation: (id: string) => void;
 }) {
   const recent = conversations.slice(0, 4);
@@ -32,7 +32,7 @@ export function WelcomeView({
       <div className="mx-auto max-w-3xl">
         <h1 className="text-2xl font-bold tracking-tight">Chat with your agents</h1>
         <p className="mt-2 text-sm text-muted">
-          Every agent runs on its own model. Put several in a group and they talk to each other.
+          Talk one-on-one in a DM, or put several agents in a group and let them take turns.
         </p>
 
         {agents.length === 0 ? (
@@ -50,7 +50,7 @@ export function WelcomeView({
                 <Button variant="ghost" onClick={onNewAgent}>
                   New agent
                 </Button>
-                <Button variant="ghost" onClick={onNewGroup} disabled={agents.length < 1}>
+                <Button variant="ghost" onClick={() => onNewRoom()} disabled={agents.length < 1}>
                   New group
                 </Button>
               </div>

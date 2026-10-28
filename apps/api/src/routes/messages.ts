@@ -1,7 +1,8 @@
 import { firstIssueMessage, sendMessageSchema } from "@agent-chat/shared";
 import type { AppConfig } from "../platform/config.js";
 import type { Store } from "../database/store.js";
-import type { Orchestrator } from "../chat/orchestrator.js";
+import { ConversationBusyError, type Orchestrator } from "../chat/orchestrator.js";
+import type { RunWorker } from "../chat/run-worker.js";
 import { ProviderError } from "../provider/provider.js";
 import { isSameOrigin, readJson, type ApiApp } from "../platform/http-helpers.js";
 
@@ -12,12 +13,21 @@ import { isSameOrigin, readJson, type ApiApp } from "../platform/http-helpers.js
  * their LLMs are checked before anything is stored, and a run that produces no
  * reply at all is rolled back completely. A message that no agent answered is
  * never left behind — the caller gets an error and retries instead.
+ *
+ * Two modes:
+ *   - sync (default): the run happens inside the request and the replies come
+ *     back in the response. Right for a quick DM.
+ *   - async (`?mode=async`): the run is handed to the worker and the request
+ *     returns 202 at once with the run id. The client follows the run's event
+ *     stream for progress. Right for a long audit that would outlive the
+ *     connection.
  */
 export function createMessageRoutes(
   app: ApiApp,
   store: Store,
   config: AppConfig,
   orchestrator: Orchestrator,
+  worker: RunWorker,
 ) {
   app.post("/api/conversations/:id/messages", async (context) => {
     if (!isSameOrigin(config, context.req.raw)) {
@@ -36,14 +46,27 @@ export function createMessageRoutes(
     }
 
     // Before storing: the room must have an active member with a working LLM.
-    // A send that cannot be answered fails here, leaving no trace.
+    // In a chat room the mentions pick who answers, so the text goes along.
     try {
-      await orchestrator.prepare(conversation);
+      await orchestrator.prepare(conversation, parsed.data.text);
     } catch (error) {
       if (error instanceof ProviderError) {
         return context.json({ error: error.message }, 400);
       }
       throw error;
+    }
+
+    const async = context.req.query("mode") === "async";
+
+    // A room that is already running rejects the second send outright: two
+    // runs sharing a transcript would each read a half-written history and
+    // append replies the other never saw. The client waits or stops first.
+    const busy = async ? orchestrator.isRunning(conversation.id) || worker.isBusy(conversation.id) : orchestrator.isRunning(conversation.id);
+    if (busy) {
+      return context.json(
+        { error: "This conversation is already running. Wait for it to finish or stop it first." },
+        409,
+      );
     }
 
     const previousUpdatedAt = conversation.updatedAt;
@@ -57,7 +80,33 @@ export function createMessageRoutes(
 
     // Re-read so the run sees the message that was just stored.
     const current = (await store.getConversation(conversation.id))!;
-    const { replies, errors, interrupted } = await orchestrator.run(current);
+
+    // Async: hand the run to the worker and return at once. The run id is the
+    // handle the client uses to follow progress over the event stream.
+    if (async) {
+      const accepted = worker.enqueue({ conversation: current, triggerMessageId: userMessage.id });
+      if (!accepted) {
+        await store.rollbackUserMessage(conversation.id, userMessage.id, previousUpdatedAt);
+        return context.json({ error: "This conversation is already running." }, 409);
+      }
+      return context.json({ userMessage, runId: null, queued: true, revision: await store.getRevision() }, 202);
+    }
+
+    let replies, errors, interrupted, runId;
+    try {
+      ({ replies, errors, interrupted, runId } = await orchestrator.run(current, {
+        triggerMessageId: userMessage.id,
+      }));
+    } catch (error) {
+      // The busy guard can still fire on a race that slipped between the check
+      // above and the run's own lock. The send is rolled back so history stays
+      // clean, and the caller is told to retry.
+      if (error instanceof ConversationBusyError) {
+        await store.rollbackUserMessage(conversation.id, userMessage.id, previousUpdatedAt);
+        return context.json({ error: error.message }, 409);
+      }
+      throw error;
+    }
 
     // Nothing answered: undo the send entirely so history stays clean and the
     // client can offer a retry instead of a message nobody will ever answer.
@@ -74,6 +123,7 @@ export function createMessageRoutes(
       replies,
       errors,
       interrupted,
+      runId,
       revision: await store.getRevision(),
     });
   });

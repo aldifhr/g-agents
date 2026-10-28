@@ -18,6 +18,14 @@ try {
  */
 const config = loadConfig();
 const store = await Store.create(config);
+
+// A run left `running` by a crash can never finish; close it at boot so a
+// stale row never blocks the single-flight guard for its conversation.
+const reconciled = await store.reconcileRunningRuns();
+if (reconciled > 0) {
+  console.log(`Reconciled ${reconciled} interrupted run(s) left by a previous process.`);
+}
+
 const app = createApp(store, config);
 
 const server = serve({ fetch: app.fetch, hostname: config.host, port: config.port }, (info) => {

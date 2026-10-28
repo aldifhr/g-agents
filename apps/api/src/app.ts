@@ -4,12 +4,20 @@ import { cors } from "hono/cors";
 import type { AppConfig } from "./platform/config.js";
 import type { Store } from "./database/store.js";
 import { Orchestrator } from "./chat/orchestrator.js";
+import { RunEventBus } from "./chat/run-events.js";
+import { RunWorker } from "./chat/run-worker.js";
+import { ToolRegistry } from "./tools/registry.js";
 import { type AppContext, type ApiApp } from "./platform/http-helpers.js";
 import { createAgentRoutes } from "./routes/agents.js";
+import { createArtifactRoutes } from "./routes/artifacts.js";
 import { createConversationRoutes } from "./routes/conversations.js";
+import { createMemoryRoutes } from "./routes/memory.js";
 import { createMessageRoutes } from "./routes/messages.js";
 import { createProviderRoutes } from "./routes/provider.js";
+import { createRunRoutes } from "./routes/runs.js";
 import { createSpaceRoutes } from "./routes/space.js";
+import { createStreamRoutes } from "./routes/stream.js";
+import { createTaskRoutes } from "./routes/tasks.js";
 
 /**
  * Hono application.
@@ -22,7 +30,10 @@ import { createSpaceRoutes } from "./routes/space.js";
  */
 export function createApp(store: Store, config: AppConfig) {
   const app: ApiApp = new Hono<AppContext>();
-  const orchestrator = new Orchestrator(store, config);
+  const tools = new ToolRegistry(config);
+  const events = new RunEventBus();
+  const orchestrator = new Orchestrator(store, config, tools, events);
+  const worker = new RunWorker(orchestrator);
 
   app.use("*", async (context, next) => {
     context.set("store", store);
@@ -61,11 +72,21 @@ export function createApp(store: Store, config: AppConfig) {
     context.json({ status: "ok", service: "gagents-api" }, 200, { "Cache-Control": "no-store" }),
   );
 
+  /** The tool catalog, so the agent settings form offers real checkboxes. */
+  app.get("/api/tools", (context) =>
+    context.json({ tools: tools.describeAll() }, 200, { "Cache-Control": "no-store" }),
+  );
+
   createAgentRoutes(app, store, config);
   createConversationRoutes(app, store, config);
-  createMessageRoutes(app, store, config, orchestrator);
+  createMessageRoutes(app, store, config, orchestrator, worker);
   createProviderRoutes(app, store, config);
   createSpaceRoutes(app, store);
+  createRunRoutes(app, store);
+  createStreamRoutes(app, store, events);
+  createTaskRoutes(app, store, config);
+  createMemoryRoutes(app, store, config);
+  createArtifactRoutes(app, store, config);
 
   return app;
 }

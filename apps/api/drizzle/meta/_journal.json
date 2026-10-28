@@ -8,6 +8,34 @@
       "when": 1793182742335,
       "tag": "0000_curious_sage",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793187441455,
+      "tag": "0001_lethal_goblin_queen",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793187517177,
+      "tag": "0002_skinny_romulus",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793188200000,
+      "tag": "0003_stage1_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793188800000,
+      "tag": "0004_dm_and_group_only",
+      "breakpoints": true
     }
   ]
 }

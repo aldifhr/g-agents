@@ -19,24 +19,35 @@ const ROLE_PRESETS = [
 /** Create or edit an agent's persona. LLM settings live in their own modal. */
 export function AgentModal({
   agent,
+  toolCatalog,
   onCancel,
   onSubmit,
 }: {
   agent?: Agent;
+  toolCatalog: Array<{ name: string; description: string }>;
   onCancel: () => void;
   onSubmit: (input: {
     name: string;
     role: string;
     systemPrompt: string;
     color: AgentColor;
+    tools: string[];
   }) => Promise<void>;
 }) {
   const [name, setName] = useState(agent?.name ?? "");
   const [role, setRole] = useState(agent?.role ?? "");
   const [systemPrompt, setSystemPrompt] = useState(agent?.systemPrompt ?? "");
   const [color, setColor] = useState<AgentColor>(agent?.color ?? "violet");
+  const [allTools, setAllTools] = useState(!agent || agent.tools.includes("*"));
+  const [tools, setTools] = useState<string[]>(agent?.tools.filter((tool) => tool !== "*") ?? []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
+  function toggleTool(name: string) {
+    setTools((current) =>
+      current.includes(name) ? current.filter((item) => item !== name) : [...current, name],
+    );
+  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -47,7 +58,13 @@ export function AgentModal({
     setBusy(true);
     setError("");
     try {
-      await onSubmit({ name: name.trim(), role: role.trim(), systemPrompt: systemPrompt.trim(), color });
+      await onSubmit({
+        name: name.trim(),
+        role: role.trim(),
+        systemPrompt: systemPrompt.trim(),
+        color,
+        tools: allTools ? ["*"] : tools,
+      });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not save the agent.");
       setBusy(false);
@@ -108,6 +125,63 @@ export function AgentModal({
           ))}
         </div>
       </Field>
+
+      <div className="grid gap-1.5">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium">Tools</span>
+          <button
+            type="button"
+            onClick={() => setAllTools((current) => !current)}
+            className={cn(
+              "rounded-full border px-2.5 py-0.5 text-[10px] font-semibold transition-colors",
+              allTools
+                ? "border-accent bg-accent text-accent-foreground"
+                : "border-border text-muted hover:text-foreground",
+            )}
+          >
+            {allTools ? "All tools" : "Custom"}
+          </button>
+        </div>
+        {allTools ? (
+          <p className="text-[11px] text-faint">
+            This agent may use every workspace and execution tool.
+          </p>
+        ) : (
+          <div className="grid max-h-52 gap-0.5 overflow-y-auto rounded-[10px] border border-border p-1.5">
+            {toolCatalog.map((entry) => {
+              const active = tools.includes(entry.name);
+              return (
+                <button
+                  key={entry.name}
+                  type="button"
+                  onClick={() => toggleTool(entry.name)}
+                  className={cn(
+                    "flex items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors",
+                    active ? "bg-accent-soft" : "hover:bg-surface-2",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "grid h-4 w-4 flex-none place-items-center rounded border",
+                      active ? "border-accent bg-accent text-accent-foreground" : "border-border-strong",
+                    )}
+                  >
+                    {active && (
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M20 6 9 17l-5-5" />
+                      </svg>
+                    )}
+                  </span>
+                  <span className="grid min-w-0">
+                    <strong className="truncate font-mono text-[11px] font-semibold">{entry.name}</strong>
+                    <small className="truncate text-[10px] text-faint">{entry.description}</small>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {error && <p className="text-xs text-danger">{error}</p>}
 

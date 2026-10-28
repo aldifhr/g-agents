@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import type {
   Agent,
@@ -8,11 +8,14 @@ import type {
   Message,
   SendMessageResponse,
   SpaceResponse,
+  Task,
+  TurnPolicy,
+  UpdateTaskRequest,
 } from "@agent-chat/shared";
 import { apiErrorMessage, apiFetch } from "@/lib/api";
 import { useTheme } from "@/hooks/use-theme";
 import { AgentModal } from "@/components/modals/agent-modal";
-import { GroupModal } from "@/components/modals/group-modal";
+import { RoomModal } from "@/components/modals/room-modal";
 import { ProviderModal } from "@/components/modals/provider-modal";
 import { Sidebar } from "@/components/sidebar";
 import { ChatView } from "@/components/chat-view";
@@ -20,15 +23,14 @@ import { WelcomeView } from "@/components/welcome-view";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/form";
 
-function conversationPath(conversation: Conversation) {
-  return conversation.kind === "dm"
-    ? `/message/${encodeURIComponent(conversation.agentIds[0] ?? conversation.id)}`
-    : `/group/${encodeURIComponent(conversation.id)}`;
-}
+export type ToolInfo = { name: string; description: string };
 
-/** A room whose URL can resolve back to it. A DM with no members never can. */
-function isNavigable(conversation: Conversation) {
-  return conversation.kind === "group" || conversation.agentIds.length > 0;
+/**
+ * Every room kind is addressed by its own conversation id, so the two routes
+ * are symmetric: /dm/:id, /group/:id.
+ */
+function conversationPath(conversation: Conversation) {
+  return `/${conversation.kind}/${encodeURIComponent(conversation.id)}`;
 }
 
 /**
@@ -45,6 +47,8 @@ export function AppShell() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string>("");
   const [messages, setMessages] = useState<Message[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [toolCatalog, setToolCatalog] = useState<ToolInfo[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [backendDown, setBackendDown] = useState(false);
   const [error, setError] = useState("");
@@ -55,7 +59,7 @@ export function AppShell() {
   const [modal, setModal] = useState<
     | { kind: "agent" }
     | { kind: "edit-agent"; agent: Agent }
-    | { kind: "group" }
+    | { kind: "room" }
     | { kind: "provider"; agent: Agent }
     | { kind: "confirm"; title: string; body: string; onConfirm: () => void }
     | null
@@ -84,6 +88,12 @@ export function AppShell() {
     void readSpace().finally(() => setLoaded(true));
   }, [readSpace]);
 
+  useEffect(() => {
+    void apiFetch<{ tools: ToolInfo[] }>("/api/tools")
+      .then((body) => setToolCatalog(body.tools))
+      .catch(() => setToolCatalog([]));
+  }, []);
+
   const readMessages = useCallback(async (conversationId: string) => {
     if (!conversationId) {
       setMessages([]);
@@ -103,16 +113,31 @@ export function AppShell() {
     void readMessages(activeId);
   }, [activeId, readMessages]);
 
+  const readTasks = useCallback(async (conversationId: string) => {
+    if (!conversationId) {
+      setTasks([]);
+      return;
+    }
+    try {
+      const body = await apiFetch<{ tasks: Task[] }>(
+        `/api/conversations/${encodeURIComponent(conversationId)}/tasks`,
+      );
+      setTasks(body.tasks);
+    } catch {
+      setTasks([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void readTasks(activeId);
+  }, [activeId, readTasks]);
+
   useEffect(() => {
     if (!loaded) return;
-    const match = pathname.match(/^\/(message|group)\/([^/]+)$/);
+    const match = pathname.match(/^\/(dm|group)\/([^/]+)$/);
     if (match) {
       const key = decodeURIComponent(match[2]);
-      const conversation = conversations.find((item) =>
-        match[1] === "message"
-          ? item.kind === "dm" && item.agentIds[0] === key
-          : item.kind === "group" && item.id === key,
-      );
+      const conversation = conversations.find((item) => item.kind === match[1] && item.id === key);
       if (conversation) {
         setActiveId(conversation.id);
         return;
@@ -124,19 +149,11 @@ export function AppShell() {
       router.replace("/");
       return;
     }
-    // Only auto-open a room whose URL resolves back to it; a room that cannot
-    // be addressed would bounce the router between here and the redirect
-    // above, forever.
-    const conversation =
-      conversations.find((item) => item.id === activeId && isNavigable(item)) ??
-      conversations.find(isNavigable);
-    if (conversation) {
-      setActiveId(conversation.id);
-      router.replace(conversationPath(conversation));
-    } else {
-      setActiveId("");
-    }
-  }, [activeId, conversations, loaded, pathname, router]);
+    // On the home route, stay on the overview. Opening a room is the user's
+    // choice from the sidebar or the welcome list; auto-redirecting into the
+    // first room would hijack the landing page every time.
+    setActiveId("");
+  }, [conversations, loaded, pathname, router]);
 
   // --- Send ---------------------------------------------------------------
 
@@ -150,10 +167,13 @@ export function AppShell() {
     const optimistic: Message = {
       id: optimisticId,
       conversationId: activeConversation.id,
+      runId: null,
       sender: "user",
       agentId: null,
       author: "You",
+      parts: [{ type: "text", text }],
       text,
+      status: "complete",
       createdAt: new Date().toISOString(),
     };
     setPendingSend({ id: optimisticId, text, failed: false });
@@ -179,6 +199,7 @@ export function AppShell() {
       ];
       if (runMessages.length > 0) setError(runMessages.join(" "));
       await readSpace();
+      await readTasks(activeConversation.id);
     } catch (caught) {
       setError(apiErrorMessage(caught));
       // The server rolls back a send no agent answered, so the bubble stays as
@@ -233,6 +254,7 @@ export function AppShell() {
     role: string;
     systemPrompt: string;
     color: Agent["color"];
+    tools: string[];
   }) {
     await apiFetch("/api/agents", { method: "POST", body: JSON.stringify(input) });
     await readSpace();
@@ -280,7 +302,7 @@ export function AppShell() {
     setNavOpen(false);
   }
 
-  async function createGroup(input: { title: string; agentIds: string[] }) {
+  async function createRoom(input: { title: string; agentIds: string[]; turnPolicy: TurnPolicy }) {
     const body = await apiFetch<{ conversation: Conversation }>("/api/conversations", {
       method: "POST",
       body: JSON.stringify({ kind: "group", ...input }),
@@ -309,6 +331,35 @@ export function AppShell() {
     });
   }
 
+  // --- Task actions -------------------------------------------------------
+
+  async function createTask(input: { title: string; assigneeAgentId: string | null }) {
+    if (!activeConversation) return;
+    await apiFetch(`/api/conversations/${encodeURIComponent(activeConversation.id)}/tasks`, {
+      method: "POST",
+      body: JSON.stringify({ title: input.title, assigneeAgentId: input.assigneeAgentId }),
+    });
+    await readTasks(activeConversation.id);
+  }
+
+  async function updateTask(taskId: string, patch: UpdateTaskRequest) {
+    if (!activeConversation) return;
+    await apiFetch(
+      `/api/conversations/${encodeURIComponent(activeConversation.id)}/tasks/${encodeURIComponent(taskId)}`,
+      { method: "PATCH", body: JSON.stringify(patch) },
+    );
+    await readTasks(activeConversation.id);
+  }
+
+  async function deleteTask(taskId: string) {
+    if (!activeConversation) return;
+    await apiFetch(
+      `/api/conversations/${encodeURIComponent(activeConversation.id)}/tasks/${encodeURIComponent(taskId)}`,
+      { method: "DELETE" },
+    );
+    await readTasks(activeConversation.id);
+  }
+
   // --- Render -------------------------------------------------------------
 
   if (!loaded) {
@@ -328,7 +379,8 @@ export function AppShell() {
         onToggleTheme={toggleTheme}
         onClose={() => setNavOpen(false)}
         onSelectConversation={(id) => {
-          setActiveId(id);
+          const conversation = conversations.find((item) => item.id === id);
+          if (conversation) router.push(conversationPath(conversation));
           setNavOpen(false);
         }}
         onOpenDm={openDm}
@@ -336,7 +388,7 @@ export function AppShell() {
         onEditAgent={(agent) => setModal({ kind: "edit-agent", agent })}
         onDeleteAgent={deleteAgent}
         onConfigureProvider={(agent) => setModal({ kind: "provider", agent })}
-        onNewGroup={() => setModal({ kind: "group" })}
+        onNewRoom={() => setModal({ kind: "room" })}
         onDeleteConversation={deleteConversation}
       />
 
@@ -369,6 +421,7 @@ export function AppShell() {
             conversation={activeConversation}
             agents={agents}
             messages={messages}
+            tasks={tasks}
             sending={sending}
             error={error}
             failedSend={pendingSend?.failed ? { id: pendingSend.id, text: pendingSend.text } : null}
@@ -376,7 +429,9 @@ export function AppShell() {
             onDismissError={() => setError("")}
             onSend={sendMessage}
             onStop={stopGeneration}
-            onOpenProvider={(agent) => setModal({ kind: "provider", agent })}
+            onCreateTask={createTask}
+            onUpdateTask={updateTask}
+            onDeleteTask={deleteTask}
           />
         ) : (
           <WelcomeView
@@ -384,7 +439,7 @@ export function AppShell() {
             conversations={conversations}
             onOpenDm={openDm}
             onNewAgent={() => setModal({ kind: "agent" })}
-            onNewGroup={() => setModal({ kind: "group" })}
+            onNewRoom={() => setModal({ kind: "room" })}
             onSelectConversation={(id) => {
               const conversation = conversations.find((item) => item.id === id);
               if (!conversation) return;
@@ -402,6 +457,7 @@ export function AppShell() {
         onClose={() => setModal(null)}
       >
         <AgentModal
+          toolCatalog={toolCatalog}
           onCancel={() => setModal(null)}
           onSubmit={async (input) => {
             await createAgent(input);
@@ -418,6 +474,7 @@ export function AppShell() {
         {modal?.kind === "edit-agent" && (
           <AgentModal
             agent={modal.agent}
+            toolCatalog={toolCatalog}
             onCancel={() => setModal(null)}
             onSubmit={async (input) => {
               await updateAgent(modal.agent.id, input);
@@ -427,12 +484,14 @@ export function AppShell() {
         )}
       </Modal>
 
-      <Modal open={modal?.kind === "group"} title="New group" onClose={() => setModal(null)}>
-        <GroupModal
-          agents={agents}
-          onCancel={() => setModal(null)}
-          onSubmit={createGroup}
-        />
+      <Modal open={modal?.kind === "room"} title="New group" onClose={() => setModal(null)}>
+        {modal?.kind === "room" && (
+          <RoomModal
+            agents={agents}
+            onCancel={() => setModal(null)}
+            onSubmit={(input) => createRoom(input)}
+          />
+        )}
       </Modal>
 
       <Modal

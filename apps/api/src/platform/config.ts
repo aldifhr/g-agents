@@ -29,6 +29,14 @@ export type AppConfig = {
   groupRounds: number;
   /** Hard cap on agent messages produced for one user message. */
   groupMaxTurns: number;
+  /** Root every workspace tool is confined to; nothing outside is reachable. */
+  sandboxRoot: string;
+  /** Wall-clock cap for one tool execution, in milliseconds. */
+  toolTimeoutMs: number;
+  /** Command the tests tool runs inside the sandbox. */
+  testCommand: string;
+  /** Maximum model → tool → model round trips per agent turn. */
+  toolMaxSteps: number;
 };
 
 function readInteger(raw: string | undefined, fallback: number, name: string) {
@@ -94,5 +102,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     providerMaxTokens: readInteger(env.AGENTCHAT_PROVIDER_MAX_TOKENS, 4096, "AGENTCHAT_PROVIDER_MAX_TOKENS"),
     groupRounds: Math.min(readNonNegativeInteger(env.AGENTCHAT_GROUP_ROUNDS, 1, "AGENTCHAT_GROUP_ROUNDS"), 3),
     groupMaxTurns: Math.min(readInteger(env.AGENTCHAT_GROUP_MAX_TURNS, 8, "AGENTCHAT_GROUP_MAX_TURNS"), 20),
+    sandboxRoot: path.resolve(env.AGENTCHAT_SANDBOX_DIR?.trim() || path.resolve(apiRoot, "..", "..")),
+    toolTimeoutMs: readInteger(env.AGENTCHAT_TOOL_TIMEOUT_MS, 30_000, "AGENTCHAT_TOOL_TIMEOUT_MS"),
+    testCommand: env.AGENTCHAT_TEST_COMMAND?.trim() || "npm test",
+    toolMaxSteps: Math.min(readInteger(env.AGENTCHAT_TOOL_MAX_STEPS, 5, "AGENTCHAT_TOOL_MAX_STEPS"), 20),
   };
 }
